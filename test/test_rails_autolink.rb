@@ -306,6 +306,11 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     end
   end
 
+  def test_xss_attempt_is_circumvented_by_not_including_quotes_in_autolinked_urls
+    xss = "http://google.com\"onclick=\"alert('gotcha')\""
+    assert_equal "<a href=\"http://google.com\">http://google.com</a>\"onclick=\"alert('gotcha')\"", auto_link(xss)
+  end
+
   private
   def generate_result(link_text, href = nil, escape = false)
     href ||= link_text
