@@ -108,13 +108,11 @@ module RailsAutolink
                 link_text = block_given?? yield(href) : href
                 href = 'http://' + href unless scheme
 
-                href = href.gsub(/"/, "&quot;")
-
                 unless options[:sanitize] == false
                   link_text = sanitize(link_text)
                   href      = sanitize(href)
                 end
-                content_tag(:a, link_text, link_attributes.merge('href' => href), !!options[:sanitize]) + punctuation.reverse.join('')
+                content_tag(:a, link_text, link_attributes.merge('href' => URI.escape(href.to_str)), !!options[:sanitize]) + punctuation.reverse.join('')
               end
             end
           end
