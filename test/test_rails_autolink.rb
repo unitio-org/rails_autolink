@@ -335,6 +335,19 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     assert_equal generate_result(url), auto_link(url)
   end
 
+  def test_autolink_with_trailing_unicode_spaces
+    # https://www.cs.tut.fi/~jkorpela/chars/spaces.html
+    spaces = ["\u0020", "\u00A0", "\u1680", "\u180E", "\u2000",
+              "\u2001", "\u2002", "\u2003", "\u2004", "\u2005",
+              "\u2006", "\u2007", "\u2008", "\u2009", "\u200A",
+              "\u200B", "\u202F", "\u205F", "\u3000", "\uFEFF"]
+
+    spaces.each do |space|
+      url = "http://www.rubyonrails.com/foo#{space}hello"
+      assert_equal "<a href=\"http://www.rubyonrails.com/foo\">http://www.rubyonrails.com/foo</a>#{space}hello", auto_link(url)
+    end
+  end
+
   def test_auto_link_does_not_timeout_when_parsing_odd_email_input
     inputs = %w(
       foo@...................................
