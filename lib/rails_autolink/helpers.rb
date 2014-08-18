@@ -15,7 +15,7 @@ module RailsAutolink
         # <tt>:email_addresses</tt>, and <tt>:urls</tt>. If a block is given, each URL and
         # e-mail address is yielded and the result is used as the link text. By default the
         # text given is sanitized, you can override this behaviour setting the
-        # <tt>:sanitize</tt> option to false, or you can add options to the sanitization of 
+        # <tt>:sanitize</tt> option to false, or you can add options to the sanitization of
         # the text using the <tt>:sanitize_options</tt> option hash.
         #
         # ==== Examples
@@ -49,7 +49,7 @@ module RailsAutolink
         #   auto_link(post_body, :all, :target => "_blank")
         #   # => "Welcome to my new blog at <a href=\"http://www.myblog.com/\" target=\"_blank\">http://www.myblog.com</a>.
         #         Please e-mail me at <a href=\"mailto:me@email.com\">me@email.com</a>."
-        def auto_link(text, *args, &block)#link = :all, html = {}, &block)
+        def auto_link(text, *args, &block) #link = :all, html = {}, &block)
           return ''.html_safe if text.blank?
 
           options = args.size == 2 ? {} : args.extract_options! # this is necessary because the old auto_link API has a Hash as its last parameter
@@ -71,14 +71,15 @@ module RailsAutolink
         private
 
           AUTO_LINK_RE = %r{
-              (?: ((?:ed2k|ftp|http|https|irc|mailto|news|gopher|nntp|telnet|webcal|xmpp|callto|feed|svn|urn|aim|rsync|tag|ssh|sftp|rtsp|afs):)// | www\. )
-              [^\s<]+
-            }x
+              (?: ((?:ed2k|ftp|http|https|irc|mailto|news|gopher|nntp|telnet|webcal|xmpp|callto|feed|svn|urn|aim|rsync|tag|ssh|sftp|rtsp|afs|file):)// | www\. )
+              [^\s<\u00A0"]+
+            }ix
 
           # regexps for determining context, used high-volume
           AUTO_LINK_CRE = [/<[^>]+$/, /^[^>]*>/, /<a\b.*?>/i, /<\/a>/i]
 
-          AUTO_EMAIL_RE = /[\w.!#\$%+-]+@[\w-]+(?:\.[\w-]+)+/
+          AUTO_EMAIL_LOCAL_RE = /[\w.!#\$%&'*\/=?^`{|}~+-]/
+          AUTO_EMAIL_RE = /[\w.!#\$%+-]\.?#{AUTO_EMAIL_LOCAL_RE}*@[\w-]+(?:\.[\w-]+)+/
 
           BRACKETS = { ']' => '[', ')' => '(', '}' => '{' }
 
@@ -97,7 +98,7 @@ module RailsAutolink
                 href
               else
                 # don't include trailing punctuation character as part of the URL
-                while href.sub!(/[^#{WORD_PATTERN}\/-]$/, '')
+                while href.sub!(/[^#{WORD_PATTERN}\/-=&]$/, '')
                   punctuation.push $&
                   if opening = BRACKETS[punctuation.last] and href.scan(opening).size > href.scan(punctuation.last).size
                     href << punctuation.pop

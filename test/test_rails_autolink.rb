@@ -2,20 +2,16 @@
 
 require "minitest/autorun"
 require "rails"
-require "rails_autolink/helpers"
 require 'erb'
 require 'cgi'
-require 'active_support/core_ext/class/attribute_accessors'
+require 'active_support'
+require 'active_support/core_ext'
 require 'action_pack'
-require 'action_view/helpers/capture_helper'
-require 'action_view/helpers/sanitize_helper'
-require 'action_view/helpers/url_helper'
-require 'action_view/helpers/tag_helper'
-require 'active_support/core_ext/module/attribute_accessors'
-require 'active_support/core_ext/string/encoding'
+require 'action_view'
+require 'action_view/helpers'
 require 'action_dispatch/testing/assertions'
-require 'action_view/helpers/text_helper'
-require 'action_view/helpers/output_safety_helper'
+require 'timeout'
+require "rails_autolink/helpers"
 
 class TestRailsAutolink < MiniTest::Unit::TestCase
   include ActionView::Helpers::CaptureHelper
@@ -88,17 +84,17 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     assert_equal %{<a href="http://www.rubyonrails.com?id=1&num=2">http://www.rubyonrails.com?id=1&num=2</a>}, auto_link("#{link_raw}#{malicious_script}")
     assert auto_link("#{link_raw}#{malicious_script}").html_safe?
   end
-  
+
   def test_auto_link_should_sanitize_input_with_sanitize_options
     link_raw     = %{http://www.rubyonrails.com?id=1&num=2}
     malicious_script  = '<script>alert("malicious!")</script>'
     text_with_attributes = %{<a href="http://ruby-lang-org" target="_blank" data-malicious="inject">Ruby</a>}
-    
+
     text_result = %{<a class="big" href="http://www.rubyonrails.com?id=1&num=2">http://www.rubyonrails.com?id=1&num=2</a><a href="http://ruby-lang-org" target="_blank">Ruby</a>}
     assert_equal text_result, auto_link("#{link_raw}#{malicious_script}#{text_with_attributes}",
                                         :sanitize_options => {:attributes => ["target", "href"]},
                                         :html => {:class => 'big'})
-    
+
     assert auto_link("#{link_raw}#{malicious_script}#{text_with_attributes}",
                      :sanitize_options => {:attributes => ["target", "href"]},
                      :html => {:class => 'big'}).html_safe?
@@ -107,7 +103,7 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
   def test_auto_link_should_not_sanitize_input_when_sanitize_option_is_false
     link_raw     = %{http://www.rubyonrails.com?id=1&num=2}
     malicious_script  = '<script>alert("malicious!")</script>'
-    
+
     assert_equal %{<a href="http://www.rubyonrails.com?id=1&num=2">http://www.rubyonrails.com?id=1&num=2</a><script>alert("malicious!")</script>}, auto_link("#{link_raw}#{malicious_script}", :sanitize => false)
     assert !auto_link("#{link_raw}#{malicious_script}", :sanitize => false).html_safe?
   end
@@ -116,14 +112,8 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     ftp_raw = 'ftp://example.com/file.txt'
     assert_equal %(Download #{generate_result(ftp_raw)}), auto_link("Download #{ftp_raw}")
 
-    file_scheme   = 'file:///home/username/RomeoAndJuliet.pdf'
-    z39_scheme    = 'z39.50r://host:696/db'
-    chrome_scheme = 'chrome://package/section/path'
-    view_source   = 'view-source:http://en.wikipedia.org/wiki/URI_scheme'
+    file_scheme = 'file:///home/username/RomeoAndJuliet.pdf'
     assert_equal generate_result(file_scheme), auto_link(file_scheme)
-    assert_equal generate_result(z39_scheme), auto_link(z39_scheme)
-    assert_equal generate_result(chrome_scheme), auto_link(chrome_scheme)
-    assert_equal generate_result(view_source), auto_link(view_source)
   end
 
   def test_auto_link_already_linked
@@ -144,6 +134,13 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     assert_equal linked_email, auto_link(linked_email)
   end
 
+  def test_auto_link_with_malicious_attr
+    url1 = "http://api.rubyonrails.com/Foo.html"
+    malicious = "\"onmousemove=\"prompt()"
+    combination = "#{url1}#{malicious}"
+
+    assert_equal %(<p><a href="#{url1}">#{url1}</a>#{malicious}</p>), auto_link("<p>#{combination}</p>")
+  end
 
   def test_auto_link_at_eol
     url1 = "http://api.rubyonrails.com/Foo.html"
@@ -156,14 +153,14 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     email_raw         = 'santiago@wyeworks.com'
     link_raw          = 'http://www.rubyonrails.org'
     malicious_script  = '<script>alert("malicious!")</script>'
-    
+
     assert auto_link(nil).html_safe?, 'should be html safe'
     assert auto_link('').html_safe?, 'should be html safe'
     assert auto_link("#{link_raw} #{link_raw} #{link_raw}").html_safe?, 'should be html safe'
     assert auto_link("hello #{email_raw}").html_safe?, 'should be html safe'
     assert auto_link("hello #{email_raw} #{malicious_script}").html_safe?, 'should be html safe'
   end
-  
+
   def test_auto_link_should_not_be_html_safe_when_sanitize_option_false
     email_raw         = 'santiago@wyeworks.com'
     link_raw          = 'http://www.rubyonrails.org'
@@ -176,6 +173,19 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
   def test_auto_link_email_address
     email_raw    = 'aaron@tenderlovemaking.com'
     email_result = %{<a href="mailto:#{email_raw}">#{email_raw}</a>}
+    assert !auto_link_email_addresses(email_result).html_safe?, 'should not be html safe'
+  end
+
+  def test_auto_link_email_addres_with_especial_chars
+    email_raw    = "and&re$la*+r-a.o'rea=l~ly@tenderlovemaking.com"
+    email_sanitized = if Rails.version =~ /^3/
+      # mail_to changed the number base it rendered HTML encoded characters at some point
+      "and&amp;re$la*+r-a.o&#x27;rea=l~ly@tenderlovemaking.com"
+    else
+      "and&amp;re$la*+r-a.o&#39;rea=l~ly@tenderlovemaking.com"
+    end
+    email_result = %{<a href="mailto:#{email_raw}">#{email_sanitized}</a>}
+    assert_equal email_result, auto_link(email_raw)
     assert !auto_link_email_addresses(email_result).html_safe?, 'should not be html safe'
   end
 
@@ -204,11 +214,8 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     email2_raw    = '+david@loudthinking.com'
     email2_result = %{<a href="mailto:#{email2_raw}">#{email2_raw}</a>}
     assert_equal email2_result, auto_link(email2_raw)
-
-    email3_raw    = '+david@loudthinking.com'
-    email3_result = %{<a href="&#109;&#97;&#105;&#108;&#116;&#111;&#58;+%64%61%76%69%64@%6c%6f%75%64%74%68%69%6e%6b%69%6e%67.%63%6f%6d">#{email3_raw}</a>}
-    assert_equal email3_result, auto_link(email3_raw, :all, :encode => :hex)
-    assert_equal email3_result, auto_link(email3_raw, :email_addresses, :encode => :hex)
+    assert_equal email2_result, auto_link(email2_raw, :all)
+    assert_equal email2_result, auto_link(email2_raw, :email_addresses)
 
     link2_raw    = 'www.rubyonrails.com'
     link2_result = generate_result(link2_raw, "http://#{link2_raw}")
@@ -275,6 +282,13 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     with_kcode 'u' do
       assert_equal %(浅草.rbの公式サイトはこちら#{link11_result}), auto_link("浅草.rbの公式サイトはこちら#{link11_raw}")
     end
+
+    link12_raw    = 'http://tools.ietf.org/html/rfc3986'
+    link12_result = generate_result(link12_raw)
+    assert_equal %(<p>#{link12_result} text-after-nonbreaking-space</p>), auto_link("<p>#{link12_raw} text-after-nonbreaking-space</p>")
+
+    link13_raw    = 'HTtP://www.rubyonrails.com'
+    assert_equal generate_result(link13_raw), auto_link(link13_raw)
   end
 
   def test_auto_link_parsing
@@ -309,6 +323,30 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
   def test_xss_attempt_is_circumvented_by_not_including_quotes_in_autolinked_urls
     xss = "http://google.com\"onclick=\"alert('gotcha')\""
     assert_equal "<a href=\"http://google.com\">http://google.com</a>\"onclick=\"alert('gotcha')\"", auto_link(xss)
+  end
+
+  def test_autolink_with_trailing_equals_on_link
+    url = "http://www.rubyonrails.com/foo.cgi?trailing_equals="
+    assert_equal generate_result(url), auto_link(url)
+  end
+
+  def test_autolink_with_trailing_amp_on_link
+    url = "http://www.rubyonrails.com/foo.cgi?trailing_ampersand=value&"
+    assert_equal generate_result(url), auto_link(url)
+  end
+
+  def test_auto_link_does_not_timeout_when_parsing_odd_email_input
+    inputs = %w(
+      foo@...................................
+      foo@........................................
+      foo@.............................................
+    )
+
+    inputs.each do |input|
+      Timeout.timeout(0.2) do
+        assert_equal input, auto_link(input)
+      end
+    end
   end
 
   private
