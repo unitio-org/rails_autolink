@@ -109,11 +109,13 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
   end
 
   def test_auto_link_other_protocols
-    ftp_raw = 'ftp://example.com/file.txt'
-    assert_equal %(Download #{generate_result(ftp_raw)}), auto_link("Download #{ftp_raw}")
-
-    file_scheme = 'file:///home/username/RomeoAndJuliet.pdf'
-    assert_equal generate_result(file_scheme), auto_link(file_scheme)
+    %w[
+      ftp://example.com/file.txt
+      afp://example.com/file.txt
+      file:///home/username/RomeoAndJuliet.pdf
+    ].each do |raw|
+      assert_equal generate_result(raw), auto_link(raw)
+    end
   end
 
   def test_auto_link_already_linked
