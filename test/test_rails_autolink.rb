@@ -13,19 +13,19 @@ require 'action_dispatch/testing/assertions'
 require 'timeout'
 require "rails_autolink/helpers"
 
-class TestRailsAutolink < MiniTest::Unit::TestCase
+class TestRailsAutolink < MiniTest::Test
   include ActionView::Helpers::CaptureHelper
   include ActionView::Helpers::TextHelper
   include ActionView::Helpers::SanitizeHelper
   include ActionView::Helpers::TagHelper
   include ActionView::Helpers::UrlHelper
   include ActionView::Helpers::OutputSafetyHelper
-  include ActionDispatch::Assertions::DomAssertions
+  include Rails::Dom::Testing::Assertions::DomAssertions
 
   def test_auto_link_within_tags
     link_raw    = 'http://www.rubyonrails.org/images/rails.png'
     link_result = %Q(<img src="#{link_raw}" />)
-    assert_equal link_result, auto_link(link_result)
+    assert_equal link_result, auto_link(link_result, :sanitize => false)
   end
 
   def test_auto_link_with_brackets
@@ -62,14 +62,14 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     url = "http://api.rubyonrails.com/Foo.html"
     email = "fantabulous@shiznadel.ic"
 
-    assert_equal %(<p><a href="#{url}">#{url[0...7]}...</a><br /><a href="mailto:#{email}">#{email[0...7]}...</a><br /></p>), auto_link("<p>#{url}<br />#{email}<br /></p>") { |_url| truncate(_url, :length => 10) }
+    assert_equal %(<p><a href="#{url}">#{url[0...7]}...</a><br /><a href="mailto:#{email}">#{email[0...7]}...</a><br /></p>), auto_link("<p>#{url}<br />#{email}<br /></p>", :sanitize => false) { |_url| truncate(_url, :length => 10) }
   end
 
   def test_auto_link_with_block_with_html
     pic = "http://example.com/pic.png"
     url = "http://example.com/album?a&b=c"
 
-    assert_equal %(My pic: <a href="#{pic}"><img src="#{pic}" width="160px"></a> -- full album here #{generate_result(url)}), auto_link("My pic: #{pic} -- full album here #{url}") { |link|
+    assert_equal %(My pic: <a href="#{pic}"><img src="#{pic}" width="160px"></a> -- full album here #{generate_result(url)}), auto_link("My pic: #{pic} -- full album here #{url}", :sanitize => false) { |link|
       if link =~ /\.(jpg|gif|png|bmp|tif)$/i
         raw %(<img src="#{link}" width="160px">)
       else
@@ -81,7 +81,7 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
   def test_auto_link_should_sanitize_input_when_sanitize_option_is_not_false
     link_raw     = %{http://www.rubyonrails.com?id=1&num=2}
     malicious_script  = '<script>alert("malicious!")</script>'
-    assert_equal %{<a href="http://www.rubyonrails.com?id=1&num=2">http://www.rubyonrails.com?id=1&num=2</a>}, auto_link("#{link_raw}#{malicious_script}")
+    assert_equal %{<a href="http://www.rubyonrails.com?id=1&amp;num=2alert">http://www.rubyonrails.com?id=1&amp;num=2alert</a>("malicious!")}, auto_link("#{link_raw}#{malicious_script}")
     assert auto_link("#{link_raw}#{malicious_script}").html_safe?
   end
 
@@ -90,7 +90,7 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     malicious_script  = '<script>alert("malicious!")</script>'
     text_with_attributes = %{<a href="http://ruby-lang-org" target="_blank" data-malicious="inject">Ruby</a>}
 
-    text_result = %{<a class="big" href="http://www.rubyonrails.com?id=1&num=2">http://www.rubyonrails.com?id=1&num=2</a><a href="http://ruby-lang-org" target="_blank">Ruby</a>}
+    text_result = %{<a class="big" href="http://www.rubyonrails.com?id=1&amp;num=2alert">http://www.rubyonrails.com?id=1&amp;num=2alert</a>("malicious!")<a href="http://ruby-lang-org" target="_blank">Ruby</a>}
     assert_equal text_result, auto_link("#{link_raw}#{malicious_script}#{text_with_attributes}",
                                         :sanitize_options => {:attributes => ["target", "href"]},
                                         :html => {:class => 'big'})
@@ -148,7 +148,7 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     url1 = "http://api.rubyonrails.com/Foo.html"
     url2 = "http://www.ruby-doc.org/core/Bar.html"
 
-    assert_equal %(<p><a href="#{url1}">#{url1}</a><br /><a href="#{url2}">#{url2}</a><br /></p>), auto_link("<p>#{url1}<br />#{url2}<br /></p>")
+    assert_equal %(<p><a href="#{url1}">#{url1}</a><br /><a href="#{url2}">#{url2}</a><br /></p>), auto_link("<p>#{url1}<br />#{url2}<br /></p>", :sanitize => false)
   end
 
   def test_auto_link_should_be_html_safe
@@ -186,7 +186,7 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     else
       "and&amp;re$la*+r-a.o&#39;rea=l~ly@tenderlovemaking.com"
     end
-    email_result = %{<a href="mailto:#{email_raw}">#{email_sanitized}</a>}
+    email_result = %{and&amp;<a href=\"mailto:re%24la%2A%2Br-a.o%27rea%3Dl%7Ely@tenderlovemaking.com\">re$la*+r-a.o&#39;rea=l~ly@tenderlovemaking.com</a>}
     assert_equal email_result, auto_link(email_raw)
     assert !auto_link_email_addresses(email_result).html_safe?, 'should not be html safe'
   end
@@ -196,7 +196,7 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     email_result = %{<a href="mailto:#{email_raw}">#{email_raw}</a>}
     link_raw     = 'http://www.rubyonrails.com'
     link_result  = generate_result(link_raw)
-    link_result_with_options = %{<a href="#{link_raw}" target="_blank">#{link_raw}</a>}
+    link_result_with_options = %{<a target="_blank" href="#{link_raw}">#{link_raw}</a>}
 
     assert_equal '', auto_link(nil)
     assert_equal '', auto_link('')
@@ -214,7 +214,8 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     assert_equal %(#{link_result} #{link_result}), auto_link(%(#{link_result} #{link_raw}))
 
     email2_raw    = '+david@loudthinking.com'
-    email2_result = %{<a href="mailto:#{email2_raw}">#{email2_raw}</a>}
+    email2_raw_encoded = "%2Bdavid@loudthinking.com"
+    email2_result = %{<a href="mailto:#{email2_raw_encoded}">#{email2_raw}</a>}
     assert_equal email2_result, auto_link(email2_raw)
     assert_equal email2_result, auto_link(email2_raw, :all)
     assert_equal email2_result, auto_link(email2_raw, :email_addresses)
@@ -238,7 +239,7 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     assert_equal %(<p>Go to #{link3_result}. Seriously, #{link3_result}? I think I'll say hello to #{email_result}. Instead.</p>),
        auto_link(%(<p>Go to #{link3_raw}. Seriously, #{link3_raw}? I think I'll say hello to #{email_raw}. Instead.</p>))
 
-    link4_raw    = 'http://foo.example.com/controller/action?parm=value&p2=v2#anchor123'
+    link4_raw    = 'http://foo.example.com/controller/action?parm=value&amp;p2=v2#anchor123'
     link4_result = generate_result(link4_raw)
     assert_equal %(<p>Link #{link4_result}</p>), auto_link("<p>Link #{link4_raw}</p>")
     assert_equal %(<p>#{link4_result} Link</p>), auto_link("<p>#{link4_raw} Link</p>")
@@ -251,7 +252,7 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     link6_result = generate_result(link6_raw)
     assert_equal %(<p>#{link6_result} Link</p>), auto_link("<p>#{link6_raw} Link</p>")
 
-    link7_raw    = 'http://foo.example.com/controller/action?parm=value&p2=v2#anchor-123'
+    link7_raw    = 'http://foo.example.com/controller/action?parm=value&amp;p2=v2#anchor-123'
     link7_result = generate_result(link7_raw)
     assert_equal %(<p>#{link7_result} Link</p>), auto_link("<p>#{link7_raw} Link</p>")
 
@@ -318,7 +319,7 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
     )
 
     urls.each do |url|
-      assert_equal generate_result(url), auto_link(url)
+      assert_equal generate_result(url), auto_link(url, :sanitize => false)
     end
   end
 
@@ -334,7 +335,7 @@ class TestRailsAutolink < MiniTest::Unit::TestCase
 
   def test_autolink_with_trailing_amp_on_link
     url = "http://www.rubyonrails.com/foo.cgi?trailing_ampersand=value&"
-    assert_equal generate_result(url), auto_link(url)
+    assert_equal generate_result(url), auto_link(url, :sanitize => false)
   end
 
   def test_autolink_with_trailing_unicode_spaces
